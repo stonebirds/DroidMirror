@@ -52,6 +52,16 @@ enum ADBService {
                 errorOutput: stderr,
                 exitCode: process.terminationStatus
             )
+            let isDevicePolling = arguments == ["devices", "-l"]
+            if !isDevicePolling || result.exitCode != 0 {
+                let command = arguments.map(Self.logSafeArgument).joined(separator: " ")
+                let rawDetails = stderr.isEmpty ? stdout : stderr
+                let details = String(rawDetails.prefix(2_000))
+                AppLogger.shared.log(
+                    "ADB",
+                    "adb \(command) -> \(result.exitCode)\(details.isEmpty ? "" : " | \(details)")"
+                )
+            }
             if !acceptFailure && process.terminationStatus != 0 {
                 throw ADBServiceError.commandFailed(stderr.isEmpty ? stdout : stderr)
             }
@@ -61,5 +71,10 @@ enum ADBService {
 
     static func arguments(for device: AndroidDevice, command: [String]) -> [String] {
         ["-s", device.serial] + command
+    }
+
+    private static func logSafeArgument(_ argument: String) -> String {
+        guard argument.lowercased().hasSuffix(".apk") else { return argument }
+        return URL(fileURLWithPath: argument).lastPathComponent
     }
 }

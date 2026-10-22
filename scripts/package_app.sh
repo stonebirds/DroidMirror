@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="${0:A:h:h}"
-app_version="2.0.0"
+app_version="2.1.3"
 version="5.0.1"
 platform_tools_version="37.0.1"
 platform_tools_sha="ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d"
@@ -47,8 +47,9 @@ package_arch="universal"
 
 adb_path="$work_dir/platform-tools/platform-tools/adb"
 adb_notice_path="$work_dir/platform-tools/platform-tools/NOTICE.txt"
-existing_adb_path="$project_dir/dist/DroidMirror.app/Contents/Resources/bin/adb"
-existing_adb_notice_path="$project_dir/dist/DroidMirror.app/Contents/Resources/ANDROID_PLATFORM_TOOLS_NOTICE.txt"
+existing_app_dir="$project_dir/dist/DroidMirror.app"
+existing_adb_path="$existing_app_dir/Contents/Resources/bin/adb"
+existing_adb_notice_path="$existing_app_dir/Contents/Resources/ANDROID_PLATFORM_TOOLS_NOTICE.txt"
 
 if [[ -x "$existing_adb_path" ]] \
   && [[ -f "$existing_adb_notice_path" ]] \
@@ -113,16 +114,15 @@ bundle_scrcpy() {
   cp -R "${scrcpy_path:h}/." "$destination/"
 }
 
-app_dir="$project_dir/dist/DroidMirror.app"
+app_dir="$work_dir/DroidMirror.app"
 contents_dir="$app_dir/Contents"
 if ! $system_scrcpy \
-  && [[ -x "$contents_dir/Resources/bin/arm64/scrcpy" ]] \
-  && [[ -x "$contents_dir/Resources/bin/x86_64/scrcpy" ]]; then
+  && [[ -x "$existing_app_dir/Contents/Resources/bin/arm64/scrcpy" ]] \
+  && [[ -x "$existing_app_dir/Contents/Resources/bin/x86_64/scrcpy" ]]; then
   mkdir -p "$work_dir/existing-scrcpy"
-  cp -R "$contents_dir/Resources/bin/arm64" "$work_dir/existing-scrcpy/arm64"
-  cp -R "$contents_dir/Resources/bin/x86_64" "$work_dir/existing-scrcpy/x86_64"
+  cp -R "$existing_app_dir/Contents/Resources/bin/arm64" "$work_dir/existing-scrcpy/arm64"
+  cp -R "$existing_app_dir/Contents/Resources/bin/x86_64" "$work_dir/existing-scrcpy/x86_64"
 fi
-rm -rf "$app_dir"
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources/bin"
 cp "$work_dir/DroidMirror" "$contents_dir/MacOS/DroidMirror"
 if ! $system_scrcpy; then
@@ -138,6 +138,7 @@ fi
 cp "$adb_path" "$contents_dir/Resources/bin/adb"
 cp "$adb_notice_path" "$contents_dir/Resources/ANDROID_PLATFORM_TOOLS_NOTICE.txt"
 cp "$project_dir/THIRD_PARTY_NOTICES.md" "$contents_dir/Resources/THIRD_PARTY_NOTICES.md"
+cp "$project_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
 
 cat > "$contents_dir/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -150,6 +151,8 @@ cat > "$contents_dir/Info.plist" <<'PLIST'
   <string>DroidMirror</string>
   <key>CFBundleIdentifier</key>
   <string>com.stonebirds.droidmirror</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -157,9 +160,9 @@ cat > "$contents_dir/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>2.0.0</string>
+  <string>2.1.3</string>
   <key>CFBundleVersion</key>
-  <string>5</string>
+  <string>9</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.utilities</string>
   <key>LSMinimumSystemVersion</key>
@@ -169,6 +172,7 @@ cat > "$contents_dir/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+printf 'APPL????' > "$contents_dir/PkgInfo"
 
 codesign --force --deep --sign - "$app_dir"
 
@@ -176,6 +180,15 @@ dmg_path="$project_dir/dist/DroidMirror-${app_version}-${package_arch}.dmg"
 rm -f "$dmg_path"
 hdiutil create -volname DroidMirror -srcfolder "$app_dir" -ov -format UDZO "$dmg_path"
 
-print "Created: $app_dir"
+pkg_path="$project_dir/dist/DroidMirror-${app_version}-${package_arch}.pkg"
+rm -f "$pkg_path"
+pkgbuild \
+  --component "$app_dir" \
+  --install-location /Applications \
+  --identifier com.stonebirds.droidmirror.installer \
+  --version "$app_version" \
+  "$pkg_path"
+
 print "Created: $dmg_path"
+print "Created: $pkg_path"
 rm -rf "$download_cache"

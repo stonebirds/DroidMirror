@@ -21,7 +21,12 @@ final class ScrcpyService: ObservableObject {
 
     private var process: Process?
 
-    func start(device: AndroidDevice, settings: MirrorSettings, recordingURL: URL? = nil) throws {
+    func start(
+        device: AndroidDevice,
+        settings: MirrorSettings,
+        recordingURL: URL? = nil,
+        showsControls: Bool = true
+    ) throws {
         guard process == nil else { throw ScrcpyServiceError.alreadyRunning }
         guard let executable = ToolLocator.executable(named: "scrcpy") else {
             throw ScrcpyServiceError.executableMissing
@@ -49,6 +54,12 @@ final class ScrcpyService: ObservableObject {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let status = finished.terminationStatus
             let reason = finished.terminationReason
+            if !message.isEmpty || status != 0 {
+                AppLogger.shared.log(
+                    "scrcpy",
+                    "Exited \(status) (\(reason.rawValue)): \(String(message.prefix(4_000)))"
+                )
+            }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.process = nil
@@ -64,7 +75,9 @@ final class ScrcpyService: ObservableObject {
         try task.run()
         process = task
         isRunning = true
-        FloatingControlsController.shared.show(for: device)
+        if showsControls {
+            FloatingControlsController.shared.show(for: device)
+        }
     }
 
     func stop() {
@@ -73,6 +86,14 @@ final class ScrcpyService: ObservableObject {
         self.process = nil
         isRunning = false
         FloatingControlsController.shared.hide()
+    }
+
+    func setControlsVisible(_ visible: Bool, for device: AndroidDevice) {
+        if visible {
+            FloatingControlsController.shared.show(for: device)
+        } else {
+            FloatingControlsController.shared.hide()
+        }
     }
 
     func clearError() {

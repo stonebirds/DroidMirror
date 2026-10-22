@@ -12,6 +12,7 @@ final class RawAudioPlayer: @unchecked Sendable {
         guard let format = Self.format else { return nil }
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: format)
+        engine.prepare()
         do {
             try engine.start()
             player.play()
@@ -41,17 +42,22 @@ final class RawAudioPlayer: @unchecked Sendable {
             return
         }
         buffer.frameLength = frameCount
+        guard let channels = buffer.floatChannelData else {
+            releaseScheduledFrames(frameCount)
+            return
+        }
         littleEndianPCM.withUnsafeBytes { source in
-            guard let destination = buffer.mutableAudioBufferList.pointee.mBuffers.mData,
-                  let sourceAddress = source.baseAddress else { return }
-            memcpy(destination, sourceAddress, alignedSize)
-            buffer.mutableAudioBufferList.pointee.mBuffers.mDataByteSize = UInt32(alignedSize)
+            let bytes = source.bindMemory(to: UInt8.self)
+            for frame in 0..<Int(frameCount) {
+                let offset = frame * 4
+                let left = UInt16(bytes[offset]) | (UInt16(bytes[offset + 1]) << 8)
+                let right = UInt16(bytes[offset + 2]) | (UInt16(bytes[offset + 3]) << 8)
+                channels[0][frame] = Float(Int16(bitPattern: left)) / 32_768
+                channels[1][frame] = Float(Int16(bitPattern: right)) / 32_768
+            }
         }
         player.scheduleBuffer(buffer) { [weak self] in
-            guard let self else { return }
-            self.lock.lock()
-            self.scheduledFrames = self.scheduledFrames > frameCount ? self.scheduledFrames - frameCount : 0
-            self.lock.unlock()
+            self?.releaseScheduledFrames(frameCount)
         }
     }
 
@@ -63,12 +69,14 @@ final class RawAudioPlayer: @unchecked Sendable {
         lock.unlock()
     }
 
-    private static var format: AVAudioFormat? {
-        AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: 48_000,
-            channels: 2,
-            interleaved: true
-        )
+    private func releaseScheduledFrames(_ frameCount: AVAudioFrameCount) {
+        lock.lock()
+        scheduledFrames = scheduledFrames > frameCount ? scheduledFrames - frameCount : 0
+        lock.unlock()
     }
+
+    private static let format = AVAudioFormat(
+        standardFormatWithSampleRate: 48_000,
+        channels: 2
+    )
 }

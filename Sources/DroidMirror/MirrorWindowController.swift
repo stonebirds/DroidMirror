@@ -7,72 +7,141 @@ final class MirrorWindowController: NSObject, NSWindowDelegate {
 
     private var window: NSWindow?
     private weak var coordinator: MirrorCoordinator?
-    private var isProgrammaticClose = false
+    private var desiredPresentation: MirrorPresentation = .embedded
+    private var isFullScreenTransition = false
+    private var shouldReleaseWhenSettled = false
 
     func show(presentation: MirrorPresentation, coordinator: MirrorCoordinator) {
-        hide()
         self.coordinator = coordinator
+        desiredPresentation = presentation
+        shouldReleaseWhenSettled = false
+        ensureWindow(coordinator: coordinator)
+        ensureWindowContent(coordinator: coordinator)
+        applyDesiredPresentation()
+    }
 
-        let content = NSHostingView(rootView: MirrorStageView(coordinator: coordinator))
-        let newWindow: NSWindow
-        switch presentation {
-        case .floating:
-            let panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
-                styleMask: [.titled, .closable, .resizable, .miniaturizable, .utilityWindow],
-                backing: .buffered,
-                defer: false
-            )
-            panel.level = .floating
-            panel.isFloatingPanel = true
-            panel.hidesOnDeactivate = false
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            panel.title = coordinator.currentDevice?.name ?? "DroidMirror"
-            newWindow = panel
+    func hide() {
+        desiredPresentation = .embedded
+        applyDesiredPresentation()
+    }
 
-        case .fullScreen:
-            let fullScreenWindow = NSWindow(
-                contentRect: NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1280, height: 800),
-                styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-                backing: .buffered,
-                defer: false
-            )
-            fullScreenWindow.title = coordinator.currentDevice?.name ?? "DroidMirror"
-            fullScreenWindow.collectionBehavior = [.fullScreenPrimary]
-            newWindow = fullScreenWindow
+    func endSession() {
+        desiredPresentation = .embedded
+        shouldReleaseWhenSettled = true
+        applyDesiredPresentation()
+    }
 
-        case .embedded:
-            return
-        }
-
-        newWindow.contentView = content
+    private func ensureWindow(coordinator: MirrorCoordinator) {
+        guard window == nil else { return }
+        let newWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        newWindow.isReleasedWhenClosed = false
+        newWindow.title = coordinator.currentDevice?.name ?? "DroidMirror"
         newWindow.minSize = NSSize(width: 300, height: 480)
         newWindow.delegate = self
+        // NSWindow creates an empty content view by default. Clear it so the
+        // mirror hosting view is installed on the first floating/full-screen use.
+        newWindow.contentView = nil
         newWindow.center()
-        newWindow.makeKeyAndOrderFront(nil)
         window = newWindow
+    }
 
-        if presentation == .fullScreen {
-            DispatchQueue.main.async { [weak newWindow] in
-                newWindow?.toggleFullScreen(nil)
+    private func ensureWindowContent(coordinator: MirrorCoordinator) {
+        guard let window, window.contentView == nil else { return }
+        window.title = coordinator.currentDevice?.name ?? "DroidMirror"
+        window.contentView = NSHostingView(rootView: MirrorStageView(coordinator: coordinator))
+    }
+
+    private func applyDesiredPresentation() {
+        guard let window, !isFullScreenTransition else { return }
+        let isFullScreen = window.styleMask.contains(.fullScreen)
+
+        switch desiredPresentation {
+        case .embedded:
+            if isFullScreen {
+                isFullScreenTransition = true
+                window.toggleFullScreen(nil)
+            } else {
+                window.orderOut(nil)
+                window.contentView = nil
+                releaseWindowIfNeeded()
+            }
+
+        case .floating:
+            if isFullScreen {
+                isFullScreenTransition = true
+                window.toggleFullScreen(nil)
+                return
+            }
+            window.level = .floating
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            window.makeKeyAndOrderFront(nil)
+
+        case .fullScreen:
+            guard !isFullScreen else {
+                window.makeKeyAndOrderFront(nil)
+                return
+            }
+            window.level = .normal
+            window.collectionBehavior = [.fullScreenPrimary]
+            window.makeKeyAndOrderFront(nil)
+            isFullScreenTransition = true
+            DispatchQueue.main.async { [weak self, weak window] in
+                guard let self, let window, self.desiredPresentation == .fullScreen else {
+                    self?.isFullScreenTransition = false
+                    self?.applyDesiredPresentation()
+                    return
+                }
+                window.toggleFullScreen(nil)
             }
         }
     }
 
-    func hide() {
-        guard let window else { return }
-        isProgrammaticClose = true
-        window.delegate = nil
-        window.orderOut(nil)
-        window.close()
-        self.window = nil
-        isProgrammaticClose = false
+    private func releaseWindowIfNeeded() {
+        guard shouldReleaseWhenSettled, let window else { return }
+        DispatchQueue.main.async { [weak self, weak window] in
+            guard let self, let window,
+                  self.shouldReleaseWhenSettled,
+                  self.window === window else { return }
+            window.delegate = nil
+            window.contentView = nil
+            self.window = nil
+            self.coordinator = nil
+            self.shouldReleaseWhenSettled = false
+        }
     }
 
-    func windowWillClose(_ notification: Notification) {
-        window = nil
-        guard !isProgrammaticClose else { return }
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        desiredPresentation = .embedded
         coordinator?.windowWasClosed()
+        applyDesiredPresentation()
+        return false
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        isFullScreenTransition = false
+        applyDesiredPresentation()
+    }
+
+    func windowWillExitFullScreen(_ notification: Notification) {
+        guard desiredPresentation == .fullScreen else { return }
+        desiredPresentation = .floating
+        coordinator?.windowPresentationChanged(to: .floating)
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        isFullScreenTransition = false
+        applyDesiredPresentation()
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        guard desiredPresentation == .fullScreen else { return }
+        desiredPresentation = .floating
+        coordinator?.windowPresentationChanged(to: .floating)
     }
 }
 
@@ -92,6 +161,14 @@ struct MirrorStageView: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button {
+                    coordinator.showsControls.toggle()
+                } label: {
+                    Image(systemName: coordinator.showsControls ? "eye.slash" : "eye")
+                        .frame(width: 24, height: 22)
+                }
+                .buttonStyle(.borderless)
+                .help(coordinator.showsControls ? "隐藏控制栏" : "显示控制栏")
                 modeButton(.embedded, symbol: "rectangle.inset.filled")
                 modeButton(.floating, symbol: "macwindow")
                 modeButton(.fullScreen, symbol: "arrow.up.left.and.arrow.down.right")
@@ -112,25 +189,33 @@ struct MirrorStageView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
 
-            Divider()
-            HStack(spacing: 6) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+            if coordinator.showsControls {
+                Divider()
+                HStack(spacing: 6) {
+                    ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
-                            controlButton(.key(.back), symbol: "chevron.backward", help: "返回")
-                            controlButton(.key(.home), symbol: "circle", help: "桌面")
-                            controlButton(.key(.appSwitch), symbol: "square.on.square", help: "最近任务")
-                        }
-                        Divider().frame(height: 22)
-                        HStack(spacing: 6) {
-                            controlButton(.key(.volumeDown), symbol: "speaker.minus", help: "降低音量")
-                            controlButton(.key(.volumeUp), symbol: "speaker.plus", help: "提高音量")
-                            controlButton(.rotate, symbol: "rotate.right", help: "旋转屏幕")
-                            controlButton(.key(.power), symbol: "lock", help: "锁屏")
-                            controlButton(.setDisplayPower(false), symbol: "display", help: "关闭手机屏幕")
-                            controlButton(.key(.wakeUp), symbol: "sun.max", help: "唤醒手机")
-                        }
-                        HStack(spacing: 6) {
+                            HStack(spacing: 6) {
+                                controlButton(.key(.back), symbol: "chevron.backward", help: "返回")
+                                controlButton(.key(.appSwitch), symbol: "square.on.square", help: "最近任务")
+                                controlButton(.key(.home), symbol: "circle", help: "返回桌面")
+                                Button {
+                                    saveScreenshot()
+                                } label: {
+                                    Image(systemName: "camera")
+                                        .frame(width: 28, height: 24)
+                                }
+                                .buttonStyle(.borderless)
+                                .help("保存截图")
+                            }
+                            Divider().frame(height: 22)
+                            HStack(spacing: 6) {
+                                controlButton(.key(.volumeDown), symbol: "speaker.minus", help: "降低音量")
+                                controlButton(.key(.volumeUp), symbol: "speaker.plus", help: "提高音量")
+                                controlButton(.rotate, symbol: "rotate.right", help: "旋转屏幕")
+                                controlButton(.key(.power), symbol: "lock", help: "锁屏")
+                                controlButton(.setDisplayPower(false), symbol: "display", help: "关闭手机屏幕")
+                                controlButton(.key(.wakeUp), symbol: "sun.max", help: "唤醒手机")
+                            }
                             Button {
                                 if let value = NSPasteboard.general.string(forType: .string) {
                                     send(.pasteClipboard(value))
@@ -141,30 +226,22 @@ struct MirrorStageView: View {
                             }
                             .buttonStyle(.borderless)
                             .help("粘贴 Mac 剪贴板")
-                            Button {
-                                saveScreenshot()
-                            } label: {
-                                Image(systemName: "camera")
-                                    .frame(width: 28, height: 24)
-                            }
-                            .buttonStyle(.borderless)
-                            .help("保存截图")
                         }
                     }
+                    Spacer(minLength: 4)
+                    Button(role: .destructive) {
+                        Task { await coordinator.stop() }
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .frame(width: 28, height: 24)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("停止镜像")
                 }
-                Spacer(minLength: 4)
-                Button(role: .destructive) {
-                    Task { await coordinator.stop() }
-                } label: {
-                    Image(systemName: "stop.fill")
-                        .frame(width: 28, height: 24)
-                }
-                .buttonStyle(.borderless)
-                .help("停止镜像")
+                .padding(.horizontal, 10)
+                .frame(height: 46)
+                .background(.bar)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 46)
-            .background(.bar)
         }
     }
 

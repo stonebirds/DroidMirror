@@ -6,24 +6,32 @@ DroidMirror 是一个基于 [scrcpy](https://github.com/Genymobile/scrcpy) serve
 
 ## 下载
 
-当前版本：**2.0.0**
+当前版本：**2.1.3**
 
-[下载 DroidMirror 2.0.0 Universal DMG](releases/DroidMirror-2.0.0-universal.dmg)
+[下载 DroidMirror 2.1.3 Universal PKG（推荐，自动安装到“应用程序”）](releases/DroidMirror-2.1.3-universal.pkg)
+
+[下载 DroidMirror 2.1.3 Universal DMG（手动拖拽安装）](releases/DroidMirror-2.1.3-universal.dmg)
 
 - 支持 Apple Silicon 与 Intel Mac
 - 最低系统版本：macOS 13
+- PKG 大小：约 34 MB
 - DMG 大小：约 38 MB
 - 安装后大小：约 81 MB
-- SHA-256：`1945753930398095dfc0490d3853c699e49a0c1e9df402fcc21e09f203ab350e`
+- PKG SHA-256：`4fd5aec589678bfb803283e14aa7e73231c906959c5f529a1138caf0d72de040`
+- DMG SHA-256：`6a7cc45c07e19f958591c1279089f4a212ba1ed684c399f27a3700df31ae9706`
 
-安装包使用 ad-hoc 签名，尚未经过 Apple notarization。首次打开时，请右键点击
-`DroidMirror.app` 并选择“打开”；也可以在“系统设置 > 隐私与安全性”中允许打开。
+Finder 会为 `.pkg` 文件统一显示 macOS Installer 的系统纸箱图标，这是正常的文件类型图标。
+安装完成后，“应用程序”中的 `DroidMirror.app` 以及 DMG 内的应用使用 DroidMirror 自有图标。
+
+应用使用 ad-hoc 签名，安装包尚未经过 Apple notarization。首次安装或打开时，请右键点击
+PKG 或 `DroidMirror.app` 并选择“打开”；也可以在“系统设置 > 隐私与安全性”中允许打开。
 
 ## 功能
 
 - 应用内低延迟 Android 镜像与控制
 - 内嵌、始终置顶悬浮窗、全屏三种显示模式
 - 模式切换时保持同一镜像会话，不重新连接手机
+- 镜像控制栏跟随独立窗口，并支持随时显示或隐藏
 - 鼠标点击、拖动和滚轮映射为 Android 触摸事件
 - 键盘输入与 Mac 剪贴板粘贴
 - Android 剪贴板自动同步到 Mac
@@ -32,22 +40,28 @@ DroidMirror 是一个基于 [scrcpy](https://github.com/Genymobile/scrcpy) serve
 - 使用 macOS 系统视频解码，不依赖 FFmpeg 或 VLC
 - Android 音频传输（Android 11 或更高版本）
 - 截图、MP4 录制、分辨率、码率和帧率设置
+- 选择或拖放 APK 安装到手机
 - USB 与无线设备自动检测
+- 保存最近连接设备，无线历史地址支持一键重连
 - USB 一键转无线，无需开启 Android“无线调试”开关
 - 连接中断后自动尝试恢复
 - 内置 Universal adb 37.0.1
 - 支持选择并记住自定义 adb 路径
 - 保留官方 scrcpy 独立窗口兼容模式
-- 一键导出诊断信息
+- 查看、复制和清理本地运行日志
+- 一键导出诊断信息和最近一次 macOS 崩溃报告
+- 提供 PKG 安装器，确认后自动安装到“应用程序”
 
 ## 安装与 USB 连接
 
-1. 下载并打开 DMG。
-2. 将 `DroidMirror.app` 拖入“应用程序”文件夹。
+1. 下载 PKG，右键点击并选择“打开”。
+2. 在 macOS Installer 中确认安装，应用会自动放入“应用程序”文件夹。
 3. 在 Android 手机上开启“开发者选项”和“USB 调试”。
 4. 使用支持数据传输的 USB 线连接手机与 Mac。
 5. 解锁手机并允许这台 Mac 进行 USB 调试。
 6. 选择设备和镜像设置，点击“开始镜像”。
+
+DMG 仍作为备用安装方式提供；使用 DMG 时需要手动将 `DroidMirror.app` 拖入“应用程序”。
 
 Android 的首次调试授权必须在手机上确认，这是系统安全限制。DroidMirror 无法绕过
 PIN、图案、密码或生物识别锁屏。
@@ -71,6 +85,21 @@ PIN、图案、密码或生物识别锁屏。
 
 若特定设备与内嵌模式不兼容，可以选择“兼容模式”，由官方 scrcpy 客户端创建独立窗口。
 录制 MP4 时当前版本会自动使用兼容模式，以保证音视频封装和同步稳定。
+
+## APK 安装
+
+选择一台已连接设备后，点击设备标题右侧的“安装 APK”，或直接将 `.apk` 文件从 Finder
+拖到设备详情区域。应用会先打开确认窗口，可在窗口内选择路径、重新选择或拖入 APK；只有
+点击“确认安装”后才会执行。DroidMirror 使用 `adb install -r` 安装，可以覆盖升级已存在的应用。
+
+## 设备历史与诊断
+
+已授权连接过的设备会保存在侧栏“最近连接”中。无线设备断开后可以点击历史记录重新连接；
+USB 设备会保留名称和最后连接时间，重新插线后自动恢复为在线设备。
+
+工具栏“运行日志”可以查看、复制或清空最近日志。“导出诊断”生成单个文本文件，包含
+应用设置、adb 状态、设备列表、运行日志和最近一份 DroidMirror 系统崩溃报告。日志文件
+限制在约 2 MB，避免长期使用造成磁盘占用持续增长。
 
 ## 无线连接
 

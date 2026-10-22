@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor
 final class FloatingControlsController {
@@ -10,7 +11,7 @@ final class FloatingControlsController {
     func show(for device: AndroidDevice) {
         hide()
 
-        let size = NSSize(width: 176, height: 52)
+        let size = NSSize(width: 268, height: 52)
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -53,11 +54,36 @@ private struct FloatingControlsView: View {
     var body: some View {
         HStack(spacing: 6) {
             controlButton(event: .back, symbol: "chevron.backward", help: "返回")
-            controlButton(event: .home, symbol: "circle", help: "返回桌面")
             controlButton(event: .appSwitch, symbol: "square.on.square", help: "最近任务")
+            controlButton(event: .home, symbol: "circle", help: "返回桌面")
+            Button {
+                Task {
+                    do {
+                        try await DeviceService.rotateDisplay(on: device)
+                    } catch {
+                        AppLogger.shared.log("Control", "Rotate failed: \(error.localizedDescription)")
+                        NSSound.beep()
+                    }
+                }
+            } label: {
+                Image(systemName: "rotate.right")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 44, height: 34)
+            }
+            .buttonStyle(.borderless)
+            .help("旋转屏幕")
+            Button {
+                saveScreenshot()
+            } label: {
+                Image(systemName: "camera")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 44, height: 34)
+            }
+            .buttonStyle(.borderless)
+            .help("保存截图")
         }
         .padding(6)
-        .frame(width: 176, height: 52)
+        .frame(width: 268, height: 52)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .overlay {
             RoundedRectangle(cornerRadius: 10)
@@ -86,5 +112,27 @@ private struct FloatingControlsView: View {
         }
         .buttonStyle(.borderless)
         .help(help)
+    }
+
+    private func saveScreenshot() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "DroidMirror-\(Self.timestamp()).png"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do {
+                let data = try await DeviceService.captureScreenshot(from: device)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                AppLogger.shared.log("Screenshot", "Save failed: \(error.localizedDescription)")
+                NSSound.beep()
+            }
+        }
+    }
+
+    private static func timestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: Date())
     }
 }
