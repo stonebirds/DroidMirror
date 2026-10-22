@@ -6,18 +6,22 @@ DroidMirror 是一个基于 [scrcpy](https://github.com/Genymobile/scrcpy) serve
 
 ## 下载
 
-当前版本：**2.1.0**
+当前版本：**2.1.1**
 
-[下载 DroidMirror 2.1.0 Universal DMG](releases/DroidMirror-2.1.0-universal.dmg)
+[下载 DroidMirror 2.1.1 Universal PKG（推荐，自动安装到“应用程序”）](releases/DroidMirror-2.1.1-universal.pkg)
+
+[下载 DroidMirror 2.1.1 Universal DMG（手动拖拽安装）](releases/DroidMirror-2.1.1-universal.dmg)
 
 - 支持 Apple Silicon 与 Intel Mac
 - 最低系统版本：macOS 13
+- PKG 大小：约 34 MB
 - DMG 大小：约 38 MB
 - 安装后大小：约 81 MB
-- SHA-256：`6e475584b8f9a952d60abcd31761783280e24d1d603c62d1f3137cd15a5d6f8e`
+- PKG SHA-256：`be342e957a12fd39453fa63c5d2a1d2422a2657ad8aa630d709b4ea14fe1425b`
+- DMG SHA-256：`7124d1eb673c8b29753564d1c70370b65c91040180709caf0f6452a92914b89b`
 
-安装包使用 ad-hoc 签名，尚未经过 Apple notarization。首次打开时，请右键点击
-`DroidMirror.app` 并选择“打开”；也可以在“系统设置 > 隐私与安全性”中允许打开。
+应用使用 ad-hoc 签名，安装包尚未经过 Apple notarization。首次安装或打开时，请右键点击
+PKG 或 `DroidMirror.app` 并选择“打开”；也可以在“系统设置 > 隐私与安全性”中允许打开。
 
 ## 功能
 
@@ -43,15 +47,18 @@ DroidMirror 是一个基于 [scrcpy](https://github.com/Genymobile/scrcpy) serve
 - 保留官方 scrcpy 独立窗口兼容模式
 - 查看、复制和清理本地运行日志
 - 一键导出诊断信息和最近一次 macOS 崩溃报告
+- 提供 PKG 安装器，确认后自动安装到“应用程序”
 
 ## 安装与 USB 连接
 
-1. 下载并打开 DMG。
-2. 将 `DroidMirror.app` 拖入“应用程序”文件夹。
+1. 下载 PKG，右键点击并选择“打开”。
+2. 在 macOS Installer 中确认安装，应用会自动放入“应用程序”文件夹。
 3. 在 Android 手机上开启“开发者选项”和“USB 调试”。
 4. 使用支持数据传输的 USB 线连接手机与 Mac。
 5. 解锁手机并允许这台 Mac 进行 USB 调试。
 6. 选择设备和镜像设置，点击“开始镜像”。
+
+DMG 仍作为备用安装方式提供；使用 DMG 时需要手动将 `DroidMirror.app` 拖入“应用程序”。
 
 Android 的首次调试授权必须在手机上确认，这是系统安全限制。DroidMirror 无法绕过
 PIN、图案、密码或生物识别锁屏。

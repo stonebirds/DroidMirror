@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="${0:A:h:h}"
-app_version="2.1.0"
+app_version="2.1.1"
 version="5.0.1"
 platform_tools_version="37.0.1"
 platform_tools_sha="ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d"
@@ -157,9 +157,9 @@ cat > "$contents_dir/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>2.1.0</string>
+  <string>2.1.1</string>
   <key>CFBundleVersion</key>
-  <string>6</string>
+  <string>7</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.utilities</string>
   <key>LSMinimumSystemVersion</key>
@@ -176,6 +176,16 @@ dmg_path="$project_dir/dist/DroidMirror-${app_version}-${package_arch}.dmg"
 rm -f "$dmg_path"
 hdiutil create -volname DroidMirror -srcfolder "$app_dir" -ov -format UDZO "$dmg_path"
 
+pkg_path="$project_dir/dist/DroidMirror-${app_version}-${package_arch}.pkg"
+rm -f "$pkg_path"
+pkgbuild \
+  --component "$app_dir" \
+  --install-location /Applications \
+  --identifier com.stonebirds.droidmirror.installer \
+  --version "$app_version" \
+  "$pkg_path"
+
 print "Created: $app_dir"
 print "Created: $dmg_path"
+print "Created: $pkg_path"
 rm -rf "$download_cache"

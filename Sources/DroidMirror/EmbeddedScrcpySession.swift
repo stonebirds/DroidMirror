@@ -203,6 +203,13 @@ final class EmbeddedRuntime: @unchecked Sendable {
                 return (video, audio, control, codec, deviceName, width, height)
             }
             let sockets = try await connectionTask.value
+            let audioPlayer = settings.audioEnabled ? RawAudioPlayer() : nil
+            if settings.audioEnabled, audioPlayer == nil {
+                AppLogger.shared.log(
+                    "Audio",
+                    "Audio output initialization failed; continuing with silent mirroring"
+                )
+            }
 
             return EmbeddedRuntime(
                 device: device,
@@ -216,7 +223,7 @@ final class EmbeddedRuntime: @unchecked Sendable {
                 controlSocket: sockets.2,
                 serverProcess: process,
                 logCollector: collector,
-                audioPlayer: settings.audioEnabled ? RawAudioPlayer() : nil
+                audioPlayer: audioPlayer
             )
         } catch {
             if process.isRunning {
