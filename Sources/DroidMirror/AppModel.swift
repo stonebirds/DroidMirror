@@ -2,14 +2,23 @@ import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
+    private static let settingsKey = "MirrorSettings.v2"
+
     @Published private(set) var devices: [AndroidDevice] = []
     @Published var selectedDeviceID: String?
-    @Published var settings = MirrorSettings()
+    @Published var settings: MirrorSettings {
+        didSet {
+            if let data = try? JSONEncoder().encode(settings) {
+                UserDefaults.standard.set(data, forKey: Self.settingsKey)
+            }
+        }
+    }
     @Published private(set) var isRefreshing = false
     @Published private(set) var isConnecting = false
+    @Published private(set) var isSwitchingWireless = false
     @Published var message: String?
 
-    let mirror = ScrcpyService()
+    let mirror = MirrorCoordinator()
     private var refreshTask: Task<Void, Never>?
 
     var selectedDevice: AndroidDevice? {
@@ -17,6 +26,12 @@ final class AppModel: ObservableObject {
     }
 
     init() {
+        if let data = UserDefaults.standard.data(forKey: Self.settingsKey),
+           let saved = try? JSONDecoder().decode(MirrorSettings.self, from: data) {
+            settings = saved
+        } else {
+            settings = MirrorSettings()
+        }
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
@@ -71,16 +86,58 @@ final class AppModel: ObservableObject {
                 : "当前设备不可用，请重新连接。"
             return
         }
+        Task {
+            do {
+                try await mirror.start(device: device, settings: settings, recordingURL: recordingURL)
+            } catch {
+                message = error.localizedDescription
+            }
+        }
+    }
+
+    func stopMirror() {
+        Task { await mirror.stop() }
+    }
+
+    func enableWirelessFromUSB() async -> Bool {
+        guard let device = selectedDevice else {
+            message = "请先选择一台 USB 设备。"
+            return false
+        }
+        isSwitchingWireless = true
+        defer { isSwitchingWireless = false }
         do {
-            try mirror.start(device: device, settings: settings, recordingURL: recordingURL)
+            let result = try await DeviceService.enableWirelessADB(for: device)
+            message = "\(result.message) 可以拔掉 USB 数据线。"
+            await refresh()
+            selectedDeviceID = result.address
+            return true
         } catch {
             message = error.localizedDescription
+            return false
+        }
+    }
+
+    func disableWirelessADB() async -> Bool {
+        guard let device = selectedDevice else {
+            message = "请先选择无线设备。"
+            return false
+        }
+        isSwitchingWireless = true
+        defer { isSwitchingWireless = false }
+        do {
+            message = try await DeviceService.disableWirelessADB(for: device)
+            await refresh()
+            return true
+        } catch {
+            message = error.localizedDescription
+            return false
         }
     }
 
     func dismissMessage() {
         message = nil
-        mirror.clearError()
+        mirror.clearMessages()
     }
 
     deinit {

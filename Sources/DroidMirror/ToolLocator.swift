@@ -17,10 +17,15 @@ enum ToolLocator {
         let fileManager = FileManager.default
         var candidates: [URL] = []
 
-        if name == "adb",
-           let customPath = UserDefaults.standard.string(forKey: customADBPathKey),
-           !customPath.isEmpty {
-            candidates.append(URL(fileURLWithPath: customPath))
+        if name == "adb" {
+            if let environmentPath = ProcessInfo.processInfo.environment["DROIDMIRROR_ADB_PATH"],
+               !environmentPath.isEmpty {
+                candidates.append(URL(fileURLWithPath: environmentPath))
+            }
+            if let customPath = UserDefaults.standard.string(forKey: customADBPathKey),
+               !customPath.isEmpty {
+                candidates.append(URL(fileURLWithPath: customPath))
+            }
         }
 
         if let resources = Bundle.main.resourceURL {
@@ -51,6 +56,26 @@ enum ToolLocator {
 
     static func setCustomADB(_ url: URL) {
         UserDefaults.standard.set(url.path, forKey: customADBPathKey)
+    }
+
+    static func scrcpyServerURL() -> URL? {
+        let fileManager = FileManager.default
+        var candidates: [URL] = []
+        if let override = ProcessInfo.processInfo.environment["SCRCPY_SERVER_PATH"] {
+            candidates.append(URL(fileURLWithPath: override))
+        }
+        if let resources = Bundle.main.resourceURL {
+            candidates.append(resources.appendingPathComponent("bin/\(runtimeArchitecture)/scrcpy-server"))
+            candidates.append(resources.appendingPathComponent("bin/scrcpy-server"))
+        }
+        if let scrcpy = executable(named: "scrcpy") {
+            candidates.append(scrcpy.deletingLastPathComponent().appendingPathComponent("scrcpy-server"))
+        }
+        candidates.append(contentsOf: [
+            URL(fileURLWithPath: "/opt/homebrew/share/scrcpy/scrcpy-server"),
+            URL(fileURLWithPath: "/usr/local/share/scrcpy/scrcpy-server")
+        ])
+        return candidates.first { fileManager.isReadableFile(atPath: $0.path) }
     }
 
     static var customADBURL: URL? {

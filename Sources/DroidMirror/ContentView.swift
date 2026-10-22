@@ -29,7 +29,14 @@ struct ContentView: View {
                 } label: {
                     Label("无线连接", systemImage: "wifi")
                 }
-                .help("通过 IP 地址连接")
+                .help("无线连接或 USB 转无线")
+
+                Button {
+                    exportDiagnostics()
+                } label: {
+                    Label("导出诊断", systemImage: "stethoscope")
+                }
+                .help("导出诊断信息")
             }
         }
         .sheet(isPresented: $showsWirelessSheet) {
@@ -129,6 +136,22 @@ struct ContentView: View {
         Task { await model.refresh() }
     }
 
+    private func exportDiagnostics() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = "DroidMirror-diagnostics.txt"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do {
+                let report = await DiagnosticsService.report(model: model)
+                try report.write(to: url, atomically: true, encoding: .utf8)
+                model.message = "诊断信息已导出。"
+            } catch {
+                model.message = error.localizedDescription
+            }
+        }
+    }
+
     @ViewBuilder
     private var detail: some View {
         if let device = model.selectedDevice {
@@ -180,110 +203,209 @@ private struct DeviceRow: View {
 
 private struct DeviceDetailView: View {
     @EnvironmentObject private var model: AppModel
-    @ObservedObject var mirror: ScrcpyService
+    @ObservedObject var mirror: MirrorCoordinator
     let device: AndroidDevice
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 16) {
-                Image(systemName: "iphone.gen3")
-                    .font(.system(size: 34))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 52, height: 52)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(device.name)
-                        .font(.title2.weight(.semibold))
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(device.state == .device ? Color.green : Color.orange)
-                            .frame(width: 8, height: 8)
-                        Text(device.state.displayName)
-                        Text("·")
-                        Text(device.isWireless ? "无线" : "USB")
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                }
-                Spacer()
+        Group {
+            if mirror.activeEngine == .embedded,
+               mirror.isRunning,
+               mirror.presentation == .embedded {
+                MirrorStageView(coordinator: mirror)
+            } else {
+                configurationView
             }
-            .padding(24)
-
-            Divider()
-
-            Form {
-                Section("画面") {
-                    Picker("最大分辨率", selection: $model.settings.maxSize) {
-                        Text("1280p").tag(1280)
-                        Text("1920p").tag(1920)
-                        Text("2560p").tag(2560)
-                    }
-                    Picker("视频码率", selection: $model.settings.bitRateMbps) {
-                        Text("4 Mbps").tag(4)
-                        Text("8 Mbps").tag(8)
-                        Text("16 Mbps").tag(16)
-                    }
-                    Picker("最大帧率", selection: $model.settings.maxFPS) {
-                        Text("30 FPS").tag(30)
-                        Text("60 FPS").tag(60)
-                        Text("90 FPS").tag(90)
-                    }
-                }
-
-                Section("设备") {
-                    Toggle("传输手机音频", isOn: $model.settings.audioEnabled)
-                    Toggle("镜像时关闭手机屏幕", isOn: $model.settings.turnScreenOff)
-                    Toggle("连接期间保持手机唤醒", isOn: $model.settings.stayAwake)
-                }
-            }
-            .formStyle(.grouped)
-
-            Divider()
-            HStack {
-                if model.mirror.isRunning {
-                    HStack(spacing: 6) {
-                        navigationButton(event: .back, symbol: "chevron.backward", help: "返回")
-                        navigationButton(event: .home, symbol: "circle", help: "返回桌面")
-                        navigationButton(event: .appSwitch, symbol: "square.on.square", help: "最近任务")
-                    }
-                } else {
-                    Button {
-                        chooseRecordingLocation()
-                    } label: {
-                        Label("录制并镜像", systemImage: "record.circle")
-                    }
-                    .disabled(device.state != .device)
-                }
-
-                Spacer()
-
-                if model.mirror.isRunning {
-                    Button(role: .destructive) {
-                        model.mirror.stop()
-                    } label: {
-                        Label("停止镜像", systemImage: "stop.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                } else {
-                    Button {
-                        model.startMirror()
-                    } label: {
-                        Label("开始镜像", systemImage: "play.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(device.state != .device)
-                }
-            }
-            .padding(20)
         }
-        .alert("镜像已停止", isPresented: Binding(
+        .alert("DroidMirror", isPresented: Binding(
             get: { mirror.lastError != nil },
-            set: { if !$0 { mirror.clearError() } }
+            set: { if !$0 { mirror.clearMessages() } }
         )) {
-            Button("好") { mirror.clearError() }
+            Button("好") { mirror.clearMessages() }
         } message: {
             Text(mirror.lastError ?? "")
         }
+    }
+
+    private var configurationView: some View {
+        VStack(spacing: 0) {
+            deviceHeader
+            Divider()
+
+            if mirror.isRunning {
+                runningSummary
+            } else {
+                settingsForm
+            }
+
+            if let notice = mirror.notice {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                    Text(notice)
+                        .font(.caption)
+                    Spacer()
+                    Button {
+                        mirror.notice = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(.quaternary)
+            }
+
+            Divider()
+            actionBar
+        }
+    }
+
+    private var deviceHeader: some View {
+        HStack(spacing: 16) {
+            Image(systemName: "iphone.gen3")
+                .font(.system(size: 34))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 52, height: 52)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(device.name)
+                    .font(.title2.weight(.semibold))
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(device.state == .device ? Color.green : Color.orange)
+                        .frame(width: 8, height: 8)
+                    Text(device.state.displayName)
+                    Text("·")
+                    Text(device.isWireless ? "无线" : "USB")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(24)
+    }
+
+    private var settingsForm: some View {
+        Form {
+            Section("镜像") {
+                Picker("镜像引擎", selection: $model.settings.engine) {
+                    ForEach(MirrorEngine.allCases) { engine in
+                        Text(engine.displayName).tag(engine)
+                    }
+                }
+                Picker("视频编码", selection: $model.settings.videoCodec) {
+                    ForEach(VideoCodecPreference.allCases) { codec in
+                        Text(codec.displayName).tag(codec)
+                    }
+                }
+                Picker("打开方式", selection: $model.settings.presentation) {
+                    ForEach(MirrorPresentation.allCases) { presentation in
+                        Text(presentation.displayName).tag(presentation)
+                    }
+                }
+                .disabled(model.settings.engine == .external)
+            }
+
+            Section("画面") {
+                Picker("最大分辨率", selection: $model.settings.maxSize) {
+                    Text("1280p").tag(1280)
+                    Text("1920p").tag(1920)
+                    Text("2560p").tag(2560)
+                }
+                Picker("视频码率", selection: $model.settings.bitRateMbps) {
+                    Text("4 Mbps").tag(4)
+                    Text("8 Mbps").tag(8)
+                    Text("16 Mbps").tag(16)
+                }
+                Picker("最大帧率", selection: $model.settings.maxFPS) {
+                    Text("30 FPS").tag(30)
+                    Text("60 FPS").tag(60)
+                    Text("90 FPS").tag(90)
+                }
+            }
+
+            Section("设备") {
+                Toggle("传输手机音频", isOn: $model.settings.audioEnabled)
+                Toggle("镜像时关闭手机屏幕", isOn: $model.settings.turnScreenOff)
+                Toggle("连接期间保持手机唤醒", isOn: $model.settings.stayAwake)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var runningSummary: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            Image(systemName: mirror.activeEngine == .embedded ? "rectangle.inset.filled" : "macwindow")
+                .font(.system(size: 48))
+                .foregroundStyle(Color.accentColor)
+            Text(mirror.state.displayName)
+                .font(.title2.weight(.semibold))
+            Text(mirror.activeEngine?.displayName ?? "")
+                .foregroundStyle(.secondary)
+            if mirror.activeEngine == .embedded {
+                HStack(spacing: 10) {
+                    ForEach(MirrorPresentation.allCases) { presentation in
+                        Button {
+                            mirror.changePresentation(to: presentation)
+                        } label: {
+                            Text(presentation.displayName)
+                                .frame(minWidth: 56)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(mirror.presentation == presentation ? Color.accentColor : nil)
+                    }
+                }
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(30)
+    }
+
+    private var actionBar: some View {
+        HStack {
+            if mirror.isRunning {
+                HStack(spacing: 6) {
+                    navigationButton(event: .key(.back), symbol: "chevron.backward", help: "返回")
+                    navigationButton(event: .key(.home), symbol: "circle", help: "返回桌面")
+                    navigationButton(event: .key(.appSwitch), symbol: "square.on.square", help: "最近任务")
+                }
+            } else {
+                Button {
+                    chooseRecordingLocation()
+                } label: {
+                    Label("录制并镜像", systemImage: "record.circle")
+                }
+                .disabled(device.state != .device)
+            }
+
+            Spacer()
+
+            if mirror.isRunning {
+                Button(role: .destructive) {
+                    model.stopMirror()
+                } label: {
+                    Label("停止镜像", systemImage: "stop.fill")
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button {
+                    model.startMirror()
+                } label: {
+                    if mirror.state == .preparing || mirror.state == .connecting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("开始镜像", systemImage: "play.fill")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(device.state != .device || mirror.state == .preparing || mirror.state == .connecting)
+            }
+        }
+        .padding(20)
     }
 
     private func chooseRecordingLocation() {
@@ -295,14 +417,14 @@ private struct DeviceDetailView: View {
     }
 
     private func navigationButton(
-        event: AndroidKeyEvent,
+        event: AndroidControlEvent,
         symbol: String,
         help: String
     ) -> some View {
         Button {
             Task {
                 do {
-                    try await DeviceService.send(event, to: device)
+                    try await mirror.send(event)
                 } catch {
                     model.message = error.localizedDescription
                 }
@@ -359,9 +481,18 @@ private struct GuideStep: View {
 }
 
 private struct WirelessConnectionView: View {
+    private enum ConnectionMode: String, CaseIterable, Identifiable {
+        case address
+        case usb
+
+        var id: String { rawValue }
+        var title: String { self == .address ? "输入地址" : "USB 转无线" }
+    }
+
     @EnvironmentObject private var model: AppModel
     @Binding var isPresented: Bool
     @State private var address = ""
+    @State private var mode: ConnectionMode = .usb
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -372,27 +503,45 @@ private struct WirelessConnectionView: View {
                 Text("无线连接")
                     .font(.title2.weight(.semibold))
             }
-            Text("输入 Android 无线调试页面显示的 IP 地址和端口。手机与 Mac 必须处于同一网络。")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            TextField("例如 192.168.1.20:37123", text: $address)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit { connect() }
+            Picker("连接方式", selection: $mode) {
+                ForEach(ConnectionMode.allCases) { item in
+                    Text(item.title).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if mode == .address {
+                Text("输入 Android 无线调试页面显示的 IP 地址和端口。")
+                    .foregroundStyle(.secondary)
+                TextField("例如 192.168.1.20:37123", text: $address)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { connect() }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(model.selectedDevice?.name ?? "未选择设备", systemImage: "cable.connector")
+                        .font(.headline)
+                    Text(usbModeDescription)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
+            }
             HStack {
                 Button("取消") { isPresented = false }
                 Spacer()
                 Button {
-                    connect()
+                    mode == .address ? connect() : switchWirelessMode()
                 } label: {
-                    if model.isConnecting {
+                    if model.isConnecting || model.isSwitchingWireless {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Text("连接")
+                        Text(actionTitle)
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isConnecting)
+                .disabled(actionDisabled)
             }
         }
         .padding(24)
@@ -405,5 +554,41 @@ private struct WirelessConnectionView: View {
                 isPresented = false
             }
         }
+    }
+
+    private func switchWirelessMode() {
+        Task {
+            let success: Bool
+            if model.selectedDevice?.isWireless == true {
+                success = await model.disableWirelessADB()
+            } else {
+                success = await model.enableWirelessFromUSB()
+            }
+            if success { isPresented = false }
+        }
+    }
+
+    private var usbModeDescription: String {
+        guard let device = model.selectedDevice else {
+            return "请先在侧栏选择一台已授权的 USB 设备。"
+        }
+        if device.isWireless {
+            return "关闭该设备的 TCP ADB，并恢复为仅 USB 调试。"
+        }
+        return "通过 USB 临时开启 TCP ADB。手机重启后需要重新操作。"
+    }
+
+    private var actionTitle: String {
+        if mode == .address { return "连接" }
+        return model.selectedDevice?.isWireless == true ? "关闭无线 ADB" : "启用并连接"
+    }
+
+    private var actionDisabled: Bool {
+        if model.isConnecting || model.isSwitchingWireless { return true }
+        if mode == .address {
+            return address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard let device = model.selectedDevice else { return true }
+        return device.state != .device
     }
 }
