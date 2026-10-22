@@ -3,10 +3,20 @@ import Foundation
 
 @MainActor
 final class MirrorCoordinator: ObservableObject {
+    private static let showsControlsKey = "MirrorControlsVisible.v1"
+
     @Published private(set) var state: MirrorSessionState = .idle
     @Published private(set) var activeEngine: MirrorEngine?
     @Published private(set) var currentDevice: AndroidDevice?
     @Published var presentation: MirrorPresentation = .embedded
+    @Published var showsControls: Bool {
+        didSet {
+            UserDefaults.standard.set(showsControls, forKey: Self.showsControlsKey)
+            if activeEngine == .external, let currentDevice {
+                external.setControlsVisible(showsControls, for: currentDevice)
+            }
+        }
+    }
     @Published var lastError: String?
     @Published var notice: String?
 
@@ -19,6 +29,7 @@ final class MirrorCoordinator: ObservableObject {
     var activeCodec: VideoCodecPreference { embedded.activeCodec }
 
     init() {
+        showsControls = UserDefaults.standard.object(forKey: Self.showsControlsKey) as? Bool ?? true
         embedded.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] newState in
@@ -26,7 +37,8 @@ final class MirrorCoordinator: ObservableObject {
                 self.state = newState
                 if case .failed(let message) = newState {
                     self.lastError = message
-                    MirrorWindowController.shared.hide()
+                    MirrorWindowController.shared.endSession()
+                    AppLogger.shared.log("Mirror", "Embedded session failed: \(message)")
                 }
             }
             .store(in: &subscriptions)
@@ -91,7 +103,12 @@ final class MirrorCoordinator: ObservableObject {
 
         case .external:
             do {
-                try external.start(device: device, settings: settings, recordingURL: recordingURL)
+                try external.start(
+                    device: device,
+                    settings: settings,
+                    recordingURL: recordingURL,
+                    showsControls: showsControls
+                )
                 state = .streaming
                 if recordingURL != nil, settings.engine == .embedded {
                     notice = "录制期间使用 scrcpy 兼容模式，以保证 MP4 音视频同步。"
@@ -109,7 +126,7 @@ final class MirrorCoordinator: ObservableObject {
     func stop() async {
         guard activeEngine != nil else { return }
         state = .stopping
-        MirrorWindowController.shared.hide()
+        MirrorWindowController.shared.endSession()
         if activeEngine == .embedded {
             await embedded.stop()
         } else {
@@ -122,6 +139,20 @@ final class MirrorCoordinator: ObservableObject {
 
     func send(_ event: AndroidControlEvent) async throws {
         guard let device = currentDevice else { throw TCPSocketError.closed }
+        if case .key(.wakeUp) = event {
+            if activeEngine == .embedded {
+                try await embedded.send(.setDisplayPower(true))
+                try await embedded.send(.key(.wakeUp))
+            } else {
+                try await DeviceService.send(.wakeUp, to: device)
+            }
+            return
+        }
+        if case .rotate = event {
+            try await DeviceService.rotateDisplay(on: device)
+            AppLogger.shared.log("Control", "Rotated display for \(device.serial)")
+            return
+        }
         if activeEngine == .embedded {
             try await embedded.send(event)
             return
@@ -139,6 +170,7 @@ final class MirrorCoordinator: ObservableObject {
     func changePresentation(to newValue: MirrorPresentation) {
         guard activeEngine == .embedded, isRunning else { return }
         presentation = newValue
+        AppLogger.shared.log("Window", "Presentation changed to \(newValue.rawValue)")
         showSelectedPresentation()
     }
 
@@ -155,6 +187,7 @@ final class MirrorCoordinator: ObservableObject {
 
     func report(_ error: Error) {
         lastError = error.localizedDescription
+        AppLogger.shared.log("Error", error.localizedDescription)
     }
 
     private func showSelectedPresentation() {
@@ -173,6 +206,7 @@ private extension AndroidKeyEvent {
         case .back: self = .back
         case .home: self = .home
         case .appSwitch: self = .appSwitch
+        case .wakeUp: self = .wakeUp
         default: return nil
         }
     }

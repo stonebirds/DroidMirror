@@ -253,6 +253,11 @@ struct MirrorSurfaceView: NSViewRepresentable {
         nsView.onEvent = onEvent
         nsView.needsLayout = true
     }
+
+    static func dismantleNSView(_ nsView: MirrorInputView, coordinator: ()) {
+        guard nsView.renderer.displayLayer.superlayer === nsView.layer else { return }
+        nsView.renderer.displayLayer.removeFromSuperlayer()
+    }
 }
 
 final class MirrorInputView: NSView {

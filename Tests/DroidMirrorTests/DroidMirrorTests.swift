@@ -49,6 +49,20 @@ final class DroidMirrorTests: XCTestCase {
         XCTAssertEqual(DeviceService.parseWiFiAddress(route), "192.168.1.88")
     }
 
+    func testParsesDisplayRotationFormats() {
+        XCTAssertEqual(DeviceService.parseDisplayRotation("lock 1"), 1)
+        XCTAssertEqual(DeviceService.parseDisplayRotation("SurfaceOrientation: 1"), 1)
+        XCTAssertEqual(DeviceService.parseDisplayRotation("mCurrentRotation=ROTATION_270"), 3)
+        XCTAssertEqual(DeviceService.parseDisplayRotation("rotation = 2"), 2)
+        XCTAssertNil(DeviceService.parseDisplayRotation("rotation unavailable"))
+    }
+
+    func testSerializesRotateEvent() {
+        let data = ScrcpyControlMessageEncoder.encode(.rotate)
+
+        XCTAssertEqual(data, Data([11]))
+    }
+
     func testSerializesKeyPressAndRelease() {
         let data = ScrcpyControlMessageEncoder.encode(.key(.home))
 

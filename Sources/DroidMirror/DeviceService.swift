@@ -31,11 +31,13 @@ enum AndroidKeyEvent: String, Sendable {
     case back = "KEYCODE_BACK"
     case home = "KEYCODE_HOME"
     case appSwitch = "KEYCODE_APP_SWITCH"
+    case wakeUp = "KEYCODE_WAKEUP"
 }
 
 enum DeviceServiceError: LocalizedError {
     case adbMissing
     case commandFailed(String)
+    case invalidAPK
     case usbDeviceRequired
     case wirelessAddressUnavailable
 
@@ -45,6 +47,8 @@ enum DeviceServiceError: LocalizedError {
             return "未找到 adb。请使用内置安装包，或先安装 Android Platform Tools。"
         case .commandFailed(let message):
             return message.isEmpty ? "无法读取 Android 设备。" : message
+        case .invalidAPK:
+            return "请选择扩展名为 .apk 的 Android 安装包。"
         case .usbDeviceRequired:
             return "请先选择一台通过 USB 连接并已授权的设备。"
         case .wirelessAddressUnavailable:
@@ -129,6 +133,61 @@ enum DeviceService {
         }.value
     }
 
+    static func installAPK(at url: URL, on device: AndroidDevice) async throws -> String {
+        guard url.pathExtension.lowercased() == "apk" else {
+            throw DeviceServiceError.invalidAPK
+        }
+        let result = try await ADBService.run(
+            ADBService.arguments(for: device, command: ["install", "-r", url.path]),
+            acceptFailure: true
+        )
+        let details = result.errorOutput.isEmpty ? result.output : result.errorOutput
+        guard result.exitCode == 0, result.output.lowercased().contains("success") else {
+            throw DeviceServiceError.commandFailed(details.isEmpty ? "APK 安装失败。" : details)
+        }
+        return result.output.isEmpty ? "APK 安装成功。" : result.output
+    }
+
+    static func rotateDisplay(on device: AndroidDevice) async throws {
+        let current = try await ADBService.run(
+            ADBService.arguments(for: device, command: ["shell", "cmd", "window", "user-rotation"]),
+            acceptFailure: true
+        )
+        var rotation = parseDisplayRotation(current.output)
+        if rotation == nil {
+            let legacy = try await ADBService.run(
+                ADBService.arguments(
+                    for: device,
+                    command: ["shell", "settings", "get", "system", "user_rotation"]
+                ),
+                acceptFailure: true
+            )
+            rotation = Int(legacy.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        let nextRotation = ((rotation ?? 0) & 1) ^ 1
+        let command = try await ADBService.run(
+            ADBService.arguments(
+                for: device,
+                command: ["shell", "cmd", "window", "user-rotation", "lock", String(nextRotation)]
+            ),
+            acceptFailure: true
+        )
+        if command.exitCode == 0 { return }
+
+        _ = try await ADBService.run(
+            ADBService.arguments(
+                for: device,
+                command: ["shell", "settings", "put", "system", "accelerometer_rotation", "0"]
+            )
+        )
+        _ = try await ADBService.run(
+            ADBService.arguments(
+                for: device,
+                command: ["shell", "settings", "put", "system", "user_rotation", String(nextRotation)]
+            )
+        )
+    }
+
     static func enableWirelessADB(for device: AndroidDevice, port: UInt16 = 5555) async throws -> WirelessTransitionResult {
         guard !device.isWireless, device.state == .device else {
             throw DeviceServiceError.usbDeviceRequired
@@ -178,6 +237,29 @@ enum DeviceService {
                   let matchRange = Range(match.range(at: 1), in: output) else { continue }
             let address = String(output[matchRange])
             if address != "127.0.0.1" { return address }
+        }
+        return nil
+    }
+
+    static func parseDisplayRotation(_ output: String) -> Int? {
+        let patterns = [
+            #"(?:free|lock)\s+([0-3])"#,
+            #"SurfaceOrientation:\s*([0-3])"#,
+            #"mCurrentRotation=ROTATION_(0|90|180|270)"#,
+            #"rotation\s*=\s*([0-3])"#
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+            let range = NSRange(output.startIndex..<output.endIndex, in: output)
+            guard let match = regex.firstMatch(in: output, range: range),
+                  let matchRange = Range(match.range(at: 1), in: output),
+                  let rawValue = Int(output[matchRange]) else { continue }
+            switch rawValue {
+            case 90: return 1
+            case 180: return 2
+            case 270: return 3
+            default: return rawValue
+            }
         }
         return nil
     }

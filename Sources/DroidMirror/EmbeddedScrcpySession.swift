@@ -547,6 +547,7 @@ final class EmbeddedScrcpySession: ObservableObject, MirrorSession {
     private func handleFailure(_ error: Error) {
         guard !manualStop, state.isRunning, let runtime,
               let device = lastDevice, let settings = lastSettings else { return }
+        AppLogger.shared.log("Mirror", "Session interrupted: \(error.localizedDescription)")
         self.runtime = nil
         runtime.close()
         renderer.reset()
@@ -572,6 +573,7 @@ final class EmbeddedScrcpySession: ObservableObject, MirrorSession {
             var lastError = error
             for attempt in 1...3 {
                 guard !Task.isCancelled, !self.manualStop else { return }
+                AppLogger.shared.log("Mirror", "Reconnect attempt \(attempt) for \(device.serial)")
                 if attempt > 1 {
                     try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_000_000_000)
                 }
@@ -597,10 +599,12 @@ final class EmbeddedScrcpySession: ObservableObject, MirrorSession {
                         return
                     }
                     self.activate(newRuntime, settings: settings)
+                    AppLogger.shared.log("Mirror", "Reconnect succeeded for \(device.serial)")
                     self.reconnectTask = nil
                     return
                 } catch {
                     lastError = error
+                    AppLogger.shared.log("Mirror", "Reconnect attempt \(attempt) failed: \(error.localizedDescription)")
                 }
             }
             self.reconnectTask = nil
@@ -613,6 +617,10 @@ final class EmbeddedScrcpySession: ObservableObject, MirrorSession {
         deviceName = runtime.deviceName
         renderer.updateVideoSize(width: runtime.initialWidth, height: runtime.initialHeight)
         state = .streaming
+        AppLogger.shared.log(
+            "Mirror",
+            "Embedded stream ready: \(runtime.device.serial), \(runtime.initialWidth)x\(runtime.initialHeight), \(activeCodec.rawValue)"
+        )
         let session = self
         runtime.startReaders(
             renderer: renderer,

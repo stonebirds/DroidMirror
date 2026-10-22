@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showsWirelessSheet = false
+    @State private var showsLogSheet = false
     @State private var selectedADBPath = ToolLocator.customADBURL?.path ?? ""
 
     var body: some View {
@@ -37,11 +38,21 @@ struct ContentView: View {
                     Label("导出诊断", systemImage: "stethoscope")
                 }
                 .help("导出诊断信息")
+
+                Button {
+                    showsLogSheet = true
+                } label: {
+                    Label("运行日志", systemImage: "text.alignleft")
+                }
+                .help("查看运行日志")
             }
         }
         .sheet(isPresented: $showsWirelessSheet) {
             WirelessConnectionView(isPresented: $showsWirelessSheet)
                 .environmentObject(model)
+        }
+        .sheet(isPresented: $showsLogSheet) {
+            LogViewer(isPresented: $showsLogSheet)
         }
         .alert("DroidMirror", isPresented: Binding(
             get: { model.message != nil },
@@ -60,6 +71,22 @@ struct ContentView: View {
                     ForEach(model.devices) { device in
                         DeviceRow(device: device)
                             .tag(device.id)
+                    }
+                }
+                if !model.offlineRecentDevices.isEmpty {
+                    Section("最近连接") {
+                        ForEach(model.offlineRecentDevices) { device in
+                            RecentDeviceRow(device: device)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    Task { await model.reconnect(device) }
+                                }
+                                .contextMenu {
+                                    Button("删除记录", role: .destructive) {
+                                        model.forget(device)
+                                    }
+                                }
+                        }
                     }
                 }
             }
@@ -201,10 +228,40 @@ private struct DeviceRow: View {
     }
 }
 
+private struct RecentDeviceRow: View {
+    let device: RecentDevice
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: device.isWireless ? "wifi" : "iphone.gen3")
+                .frame(width: 20)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(device.name)
+                    .lineLimit(1)
+                Text(device.lastConnectedAt, format: .relative(presentation: .named))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if device.isWireless {
+                Image(systemName: "arrow.clockwise")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 3)
+        .help(device.isWireless ? "重新连接 \(device.serial)" : "等待 USB 重新连接")
+    }
+}
+
 private struct DeviceDetailView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var mirror: MirrorCoordinator
     let device: AndroidDevice
+    @State private var isAPKDropTarget = false
+    @State private var pendingAPKURL: URL?
+    @State private var showsAPKConfirmation = false
 
     var body: some View {
         Group {
@@ -223,6 +280,31 @@ private struct DeviceDetailView: View {
             Button("好") { mirror.clearMessages() }
         } message: {
             Text(mirror.lastError ?? "")
+        }
+        .sheet(isPresented: $showsAPKConfirmation) {
+            APKInstallConfirmationView(
+                device: device,
+                selectedURL: $pendingAPKURL,
+                isPresented: $showsAPKConfirmation
+            )
+            .environmentObject(model)
+        }
+        .onDrop(
+            of: [UTType.fileURL.identifier],
+            isTargeted: $isAPKDropTarget,
+            perform: acceptAPKDrop
+        )
+        .overlay {
+            if isAPKDropTarget {
+                ZStack {
+                    Color.accentColor.opacity(0.12)
+                    Label("安装 APK", systemImage: "shippingbox.and.arrow.backward")
+                        .font(.title2.weight(.semibold))
+                        .padding(18)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .allowsHitTesting(false)
+            }
         }
     }
 
@@ -283,6 +365,19 @@ private struct DeviceDetailView: View {
                 .foregroundStyle(.secondary)
             }
             Spacer()
+            Button {
+                pendingAPKURL = nil
+                showsAPKConfirmation = true
+            } label: {
+                if model.isInstallingAPK {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Label("安装 APK", systemImage: "shippingbox.and.arrow.backward")
+                }
+            }
+            .disabled(device.state != .device || model.isInstallingAPK)
+            .help("选择或拖放 Android APK 安装包")
         }
         .padding(24)
     }
@@ -330,6 +425,7 @@ private struct DeviceDetailView: View {
                 Toggle("传输手机音频", isOn: $model.settings.audioEnabled)
                 Toggle("镜像时关闭手机屏幕", isOn: $model.settings.turnScreenOff)
                 Toggle("连接期间保持手机唤醒", isOn: $model.settings.stayAwake)
+                Toggle("显示镜像控制栏", isOn: $mirror.showsControls)
             }
         }
         .formStyle(.grouped)
@@ -359,6 +455,15 @@ private struct DeviceDetailView: View {
                     }
                 }
             }
+            Button {
+                mirror.showsControls.toggle()
+            } label: {
+                Label(
+                    mirror.showsControls ? "隐藏控制栏" : "显示控制栏",
+                    systemImage: mirror.showsControls ? "eye.slash" : "eye"
+                )
+            }
+            .buttonStyle(.bordered)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -370,8 +475,17 @@ private struct DeviceDetailView: View {
             if mirror.isRunning {
                 HStack(spacing: 6) {
                     navigationButton(event: .key(.back), symbol: "chevron.backward", help: "返回")
-                    navigationButton(event: .key(.home), symbol: "circle", help: "返回桌面")
                     navigationButton(event: .key(.appSwitch), symbol: "square.on.square", help: "最近任务")
+                    navigationButton(event: .key(.home), symbol: "circle", help: "返回桌面")
+                    navigationButton(event: .rotate, symbol: "rotate.right", help: "旋转屏幕")
+                    Button {
+                        saveScreenshot()
+                    } label: {
+                        Image(systemName: "camera")
+                            .frame(width: 24, height: 18)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("保存截图")
                 }
             } else {
                 Button {
@@ -408,6 +522,46 @@ private struct DeviceDetailView: View {
         .padding(20)
     }
 
+    private func acceptAPKDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }) else { return false }
+
+        provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, error in
+            guard error == nil, let data,
+                  let url = URL(dataRepresentation: data, relativeTo: nil) else {
+                AppLogger.shared.log("APK", "Unable to read dropped file URL")
+                return
+            }
+            Task { @MainActor in
+                guard url.pathExtension.lowercased() == "apk" else {
+                    model.message = "请选择扩展名为 .apk 的 Android 安装包。"
+                    return
+                }
+                pendingAPKURL = url
+                showsAPKConfirmation = true
+            }
+        }
+        return true
+    }
+
+    private func saveScreenshot() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "DroidMirror-\(formattedTimestamp()).png"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do {
+                let data = try await mirror.captureScreenshot()
+                try data.write(to: url, options: .atomic)
+                AppLogger.shared.log("Screenshot", "Saved \(url.lastPathComponent)")
+            } catch {
+                model.message = error.localizedDescription
+                AppLogger.shared.log("Screenshot", "Save failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func chooseRecordingLocation() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.mpeg4Movie]
@@ -441,6 +595,155 @@ private struct DeviceDetailView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter.string(from: Date())
+    }
+}
+
+private struct APKInstallConfirmationView: View {
+    @EnvironmentObject private var model: AppModel
+    let device: AndroidDevice
+    @Binding var selectedURL: URL?
+    @Binding var isPresented: Bool
+    @State private var isDropTarget = false
+    @State private var validationMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: "shippingbox.and.arrow.backward")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("安装 Android APK")
+                        .font(.title2.weight(.semibold))
+                    Text("目标设备：\(device.name)（\(device.serial)）")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(spacing: 10) {
+                Image(systemName: selectedURL == nil ? "doc.badge.plus" : "checkmark.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(selectedURL == nil ? Color.secondary : Color.green)
+                if let selectedURL {
+                    Text(selectedURL.lastPathComponent)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(selectedURL.path)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                } else {
+                    Text("将 APK 拖到这里")
+                        .font(.headline)
+                    Text("或者点击下方按钮选择文件路径")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 140)
+            .background(isDropTarget ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(
+                        isDropTarget ? Color.accentColor : Color.secondary.opacity(0.35),
+                        style: StrokeStyle(lineWidth: isDropTarget ? 2 : 1, dash: [6])
+                    )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .onDrop(
+                of: [UTType.fileURL.identifier],
+                isTargeted: $isDropTarget,
+                perform: acceptDrop
+            )
+
+            HStack {
+                Button(selectedURL == nil ? "选择 APK…" : "重新选择…") {
+                    chooseAPK()
+                }
+                if let validationMessage {
+                    Text(validationMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                Spacer()
+            }
+
+            Divider()
+
+            HStack {
+                Button("取消") {
+                    isPresented = false
+                }
+                .keyboardShortcut(.cancelAction)
+                .disabled(model.isInstallingAPK)
+                Spacer()
+                Button {
+                    installSelectedAPK()
+                } label: {
+                    if model.isInstallingAPK {
+                        HStack(spacing: 7) {
+                            ProgressView().controlSize(.small)
+                            Text("正在安装…")
+                        }
+                    } else {
+                        Text("确认安装")
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(selectedURL == nil || model.isInstallingAPK)
+            }
+        }
+        .padding(24)
+        .frame(width: 560)
+    }
+
+    private func chooseAPK() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 Android APK"
+        panel.prompt = "选择"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [UTType(filenameExtension: "apk") ?? .data]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        select(url)
+    }
+
+    private func acceptDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }) else { return false }
+
+        provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, error in
+            guard error == nil, let data,
+                  let url = URL(dataRepresentation: data, relativeTo: nil) else {
+                Task { @MainActor in validationMessage = "无法读取拖入的文件。" }
+                return
+            }
+            Task { @MainActor in select(url) }
+        }
+        return true
+    }
+
+    private func select(_ url: URL) {
+        guard url.pathExtension.lowercased() == "apk" else {
+            validationMessage = "请选择扩展名为 .apk 的文件。"
+            return
+        }
+        selectedURL = url
+        validationMessage = nil
+    }
+
+    private func installSelectedAPK() {
+        guard let selectedURL else { return }
+        Task {
+            if await model.installAPK(from: selectedURL) {
+                isPresented = false
+            }
+        }
     }
 }
 
@@ -590,5 +893,70 @@ private struct WirelessConnectionView: View {
         }
         guard let device = model.selectedDevice else { return true }
         return device.state != .device
+    }
+}
+
+private struct LogViewer: View {
+    @Binding var isPresented: Bool
+    @State private var content = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("运行日志")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    refresh()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("刷新")
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(content, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .help("复制全部日志")
+                Button(role: .destructive) {
+                    AppLogger.shared.clear()
+                    refresh()
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .help("清空日志")
+            }
+            .padding(14)
+
+            Divider()
+            ScrollView([.horizontal, .vertical]) {
+                Text(content.isEmpty ? "暂无日志" : content)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(12)
+            }
+            .background(Color(nsColor: .textBackgroundColor))
+
+            Divider()
+            HStack {
+                Text(AppLogger.shared.fileURL?.path ?? "")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button("完成") { isPresented = false }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(14)
+        }
+        .frame(minWidth: 680, minHeight: 440)
+        .onAppear { refresh() }
+    }
+
+    private func refresh() {
+        content = AppLogger.shared.snapshot()
     }
 }

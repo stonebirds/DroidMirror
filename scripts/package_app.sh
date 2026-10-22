@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="${0:A:h:h}"
-app_version="2.0.0"
+app_version="2.1.0"
 version="5.0.1"
 platform_tools_version="37.0.1"
 platform_tools_sha="ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d"
@@ -157,9 +157,9 @@ cat > "$contents_dir/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>2.0.0</string>
+  <string>2.1.0</string>
   <key>CFBundleVersion</key>
-  <string>5</string>
+  <string>6</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.utilities</string>
   <key>LSMinimumSystemVersion</key>
