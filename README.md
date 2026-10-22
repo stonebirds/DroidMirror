@@ -6,19 +6,19 @@ DroidMirror 是一个基于 [scrcpy](https://github.com/Genymobile/scrcpy) serve
 
 ## 下载
 
-当前版本：**2.1.1**
+当前版本：**2.1.2**
 
-[下载 DroidMirror 2.1.1 Universal PKG（推荐，自动安装到“应用程序”）](releases/DroidMirror-2.1.1-universal.pkg)
+[下载 DroidMirror 2.1.2 Universal PKG（推荐，自动安装到“应用程序”）](releases/DroidMirror-2.1.2-universal.pkg)
 
-[下载 DroidMirror 2.1.1 Universal DMG（手动拖拽安装）](releases/DroidMirror-2.1.1-universal.dmg)
+[下载 DroidMirror 2.1.2 Universal DMG（手动拖拽安装）](releases/DroidMirror-2.1.2-universal.dmg)
 
 - 支持 Apple Silicon 与 Intel Mac
 - 最低系统版本：macOS 13
 - PKG 大小：约 34 MB
 - DMG 大小：约 38 MB
 - 安装后大小：约 81 MB
-- PKG SHA-256：`be342e957a12fd39453fa63c5d2a1d2422a2657ad8aa630d709b4ea14fe1425b`
-- DMG SHA-256：`7124d1eb673c8b29753564d1c70370b65c91040180709caf0f6452a92914b89b`
+- PKG SHA-256：`5e4a686a099f1a0bac453e1f32fea36ff206575c8823a1c4eea26e729cb9a9a0`
+- DMG SHA-256：`3b2db3bffd86210c7658dccd148c42bd5e171aa42e808a89a6a410046f58eb15`
 
 应用使用 ad-hoc 签名，安装包尚未经过 Apple notarization。首次安装或打开时，请右键点击
 PKG 或 `DroidMirror.app` 并选择“打开”；也可以在“系统设置 > 隐私与安全性”中允许打开。
