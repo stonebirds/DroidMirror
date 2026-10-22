@@ -2,10 +2,12 @@
 set -euo pipefail
 
 project_dir="${0:A:h:h}"
-app_version="1.2.0"
+app_version="2.0.0"
 version="5.0.1"
 platform_tools_version="37.0.1"
 platform_tools_sha="ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d"
+platform_tools_adb_sha="1811e253b21b12cbfda7201ebaf86c10e7ddcb5c606a7a81f7c82b4c429c2d3b"
+platform_tools_notice_sha="356cc66516060e4da6bdc53e6f0bbb8e8101673f326b73c68d535eddd04dd7b1"
 platform_tools_url="https://dl.google.com/android/repository/platform-tools_r${platform_tools_version}-darwin.zip"
 system_scrcpy=false
 if [[ "${1:-}" == "--system-scrcpy" ]]; then
@@ -43,21 +45,34 @@ lipo -create \
   -output "$work_dir/DroidMirror"
 package_arch="universal"
 
-print "Downloading Android Platform Tools ${platform_tools_version}..."
-platform_archive="$work_dir/platform-tools.zip"
-curl --http1.1 -L --fail --silent --show-error \
-  --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 300 \
-  "$platform_tools_url" -o "$platform_archive"
-actual_platform_sha="$(shasum -a 256 "$platform_archive" | awk '{print $1}')"
-if [[ "$actual_platform_sha" != "$platform_tools_sha" ]]; then
-  print -u2 "Platform Tools checksum mismatch. Expected $platform_tools_sha, got $actual_platform_sha"
-  exit 1
-fi
-unzip -q "$platform_archive" \
-  platform-tools/adb platform-tools/NOTICE.txt \
-  -d "$work_dir/platform-tools"
 adb_path="$work_dir/platform-tools/platform-tools/adb"
 adb_notice_path="$work_dir/platform-tools/platform-tools/NOTICE.txt"
+existing_adb_path="$project_dir/dist/DroidMirror.app/Contents/Resources/bin/adb"
+existing_adb_notice_path="$project_dir/dist/DroidMirror.app/Contents/Resources/ANDROID_PLATFORM_TOOLS_NOTICE.txt"
+
+if [[ -x "$existing_adb_path" ]] \
+  && [[ -f "$existing_adb_notice_path" ]] \
+  && [[ "$(shasum -a 256 "$existing_adb_path" | awk '{print $1}')" == "$platform_tools_adb_sha" ]] \
+  && [[ "$(shasum -a 256 "$existing_adb_notice_path" | awk '{print $1}')" == "$platform_tools_notice_sha" ]]; then
+  print "Reusing verified Android Platform Tools ${platform_tools_version}..."
+  mkdir -p "${adb_path:h}"
+  cp "$existing_adb_path" "$adb_path"
+  cp "$existing_adb_notice_path" "$adb_notice_path"
+else
+  print "Downloading Android Platform Tools ${platform_tools_version}..."
+  platform_archive="$work_dir/platform-tools.zip"
+  curl --http1.1 -L --fail --silent --show-error \
+    --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 300 \
+    "$platform_tools_url" -o "$platform_archive"
+  actual_platform_sha="$(shasum -a 256 "$platform_archive" | awk '{print $1}')"
+  if [[ "$actual_platform_sha" != "$platform_tools_sha" ]]; then
+    print -u2 "Platform Tools checksum mismatch. Expected $platform_tools_sha, got $actual_platform_sha"
+    exit 1
+  fi
+  unzip -q "$platform_archive" \
+    platform-tools/adb platform-tools/NOTICE.txt \
+    -d "$work_dir/platform-tools"
+fi
 
 bundle_scrcpy() {
   local release_arch="$1"
@@ -134,7 +149,7 @@ cat > "$contents_dir/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>DroidMirror</string>
   <key>CFBundleIdentifier</key>
-  <string>com.example.droidmirror</string>
+  <string>com.stonebirds.droidmirror</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -142,9 +157,11 @@ cat > "$contents_dir/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.2.0</string>
+  <string>2.0.0</string>
   <key>CFBundleVersion</key>
-  <string>4</string>
+  <string>5</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.utilities</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>NSHighResolutionCapable</key>
