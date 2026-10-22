@@ -179,6 +179,12 @@ final class MirrorCoordinator: ObservableObject {
         presentation = .embedded
     }
 
+    func windowPresentationChanged(to newValue: MirrorPresentation) {
+        guard activeEngine == .embedded, isRunning else { return }
+        presentation = newValue
+        AppLogger.shared.log("Window", "System presentation changed to \(newValue.rawValue)")
+    }
+
     func clearMessages() {
         lastError = nil
         notice = nil

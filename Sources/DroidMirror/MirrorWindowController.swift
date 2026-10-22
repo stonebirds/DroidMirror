@@ -43,6 +43,9 @@ final class MirrorWindowController: NSObject, NSWindowDelegate {
         newWindow.title = coordinator.currentDevice?.name ?? "DroidMirror"
         newWindow.minSize = NSSize(width: 300, height: 480)
         newWindow.delegate = self
+        // NSWindow creates an empty content view by default. Clear it so the
+        // mirror hosting view is installed on the first floating/full-screen use.
+        newWindow.contentView = nil
         newWindow.center()
         window = newWindow
     }
@@ -124,9 +127,21 @@ final class MirrorWindowController: NSObject, NSWindowDelegate {
         applyDesiredPresentation()
     }
 
+    func windowWillExitFullScreen(_ notification: Notification) {
+        guard desiredPresentation == .fullScreen else { return }
+        desiredPresentation = .floating
+        coordinator?.windowPresentationChanged(to: .floating)
+    }
+
     func windowDidExitFullScreen(_ notification: Notification) {
         isFullScreenTransition = false
         applyDesiredPresentation()
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        guard desiredPresentation == .fullScreen else { return }
+        desiredPresentation = .floating
+        coordinator?.windowPresentationChanged(to: .floating)
     }
 }
 

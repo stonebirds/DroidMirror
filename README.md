@@ -14,7 +14,7 @@ DroidMirror 是一个基于 [scrcpy](https://github.com/Genymobile/scrcpy) serve
 - 最低系统版本：macOS 13
 - DMG 大小：约 38 MB
 - 安装后大小：约 81 MB
-- SHA-256：`52769eb6101444c192c0b2add20bd9341423e523e11604d320116d37e737a42f`
+- SHA-256：`6e475584b8f9a952d60abcd31761783280e24d1d603c62d1f3137cd15a5d6f8e`
 
 安装包使用 ad-hoc 签名，尚未经过 Apple notarization。首次打开时，请右键点击
 `DroidMirror.app` 并选择“打开”；也可以在“系统设置 > 隐私与安全性”中允许打开。
