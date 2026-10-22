@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="${0:A:h:h}"
-app_version="2.1.2"
+app_version="2.1.3"
 version="5.0.1"
 platform_tools_version="37.0.1"
 platform_tools_sha="ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d"
@@ -152,7 +152,7 @@ cat > "$contents_dir/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key>
   <string>com.stonebirds.droidmirror</string>
   <key>CFBundleIconFile</key>
-  <string>AppIcon.icns</string>
+  <string>AppIcon</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -160,9 +160,9 @@ cat > "$contents_dir/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>2.1.2</string>
+  <string>2.1.3</string>
   <key>CFBundleVersion</key>
-  <string>8</string>
+  <string>9</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.utilities</string>
   <key>LSMinimumSystemVersion</key>
@@ -172,6 +172,7 @@ cat > "$contents_dir/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+printf 'APPL????' > "$contents_dir/PkgInfo"
 
 codesign --force --deep --sign - "$app_dir"
 
