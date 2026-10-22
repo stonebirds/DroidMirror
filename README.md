@@ -7,6 +7,20 @@ DroidMirror 是一个基于 [scrcpy](https://github.com/Genymobile/scrcpy) serve
 关于 DroidMirror 与官方 scrcpy、Android Studio Running Devices 的差异及项目定位，见
 [`docs/PRODUCT_COMPARISON.md`](docs/PRODUCT_COMPARISON.md)。
 
+## 界面预览
+
+### 应用内镜像与控制
+
+![DroidMirror 应用内 Android 镜像与控制](docs/images/droidmirror-embedded-mirror.png)
+
+### 镜像参数
+
+![DroidMirror 镜像参数设置](docs/images/droidmirror-settings.png)
+
+### 无线连接
+
+![DroidMirror 无线连接](docs/images/droidmirror-wireless-connection.png)
+
 ## 下载
 
 当前版本：**2.1.3**
