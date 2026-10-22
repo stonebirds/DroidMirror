@@ -4,6 +4,9 @@ DroidMirror 是一个基于 [scrcpy](https://github.com/Genymobile/scrcpy) serve
 原生 macOS Android 镜像与控制应用。手机画面可以直接显示在 DroidMirror 中，
 也可以切换到悬浮窗口或全屏。
 
+关于 DroidMirror 与官方 scrcpy、Android Studio Running Devices 的差异及项目定位，见
+[`docs/PRODUCT_COMPARISON.md`](docs/PRODUCT_COMPARISON.md)。
+
 ## 下载
 
 当前版本：**2.1.3**
